@@ -1,0 +1,60 @@
+name: mac
+
+on: 
+  push:
+
+jobs:
+
+  build-mac:
+
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [macos-latest]
+
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install MacPorts
+      run: |
+        curl -o install.pkg https://distfiles.macports.org/MacPorts/MacPorts-2.6.2-10.15-Catalina.pkg
+        sudo installer -pkg install.pkg -target /
+        ls /opt
+        export PATH=/opt/local/bin:$PATH
+        sudo port install zmq
+    - name: setup
+      run: |
+        cd ..
+        git clone https://github.com/open-ephys/plugin-GUI.git
+        cd plugin-GUI/Build && cmake -G "Xcode" -DCMAKE_BUILD_TYPE=Release ..
+    - name: build
+      run: |
+        cd Build
+        cmake -G "Xcode" -DCMAKE_BUILD_TYPE=Release ..
+        xcodebuild -configuration Release
+#    - name: test
+#      run: cd build && ctest
+    - name: deploy
+      env:
+        bintrayUser: ${{ secrets.bintrayUsername }}
+        bintrayApiKey: ${{ secrets.bintrayApiKey }}
+        build_dir: "Build"
+        repo: ${{ github.event.repository.name }}
+        package: ${{ github.event.repository.name }}-mac
+      run: |
+        plugin_api=$(grep -rnw ../plugin-GUI/Source -e '#define PLUGIN_API_VER' | grep -Eo "[0-9]" | tail -1)
+        tag=$(git describe --tags $(git rev-list --tags --max-count=1))
+        new_plugin_ver=$tag-API$plugin_api
+        mkdir plugins 
+        cp -r $build_dir/*/Release/*.bundle plugins
+        if [[ $(ls $build_dir/*/Release/*.dylib) ]]; then
+            mkdir shared
+            cp -r $build_dir/*/Release/*.dylib shared
+        fi
+        zipfile=${package}_${new_plugin_ver}.zip
+        zip -r -X $zipfile plugins
+        if [ -d "shared" ]; then
+            zip -ur -X $zipfile shared
+        fi
+        user_info="$bintrayUser:$bintrayApiKey"
+        curl -T $zipfile --user $user_info https://api.bintray.com/content/$bintrayUser/$repo/$package/$new_plugin_ver/$zipfile
+        curl -X POST --user $user_info https://api.bintray.com/content/$bintrayUser/$repo/$package/$new_plugin_ver/publish
