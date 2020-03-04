@@ -16,9 +16,8 @@ jobs:
     - uses: actions/checkout@v1
     - name: Install ZeroMQ
       run: |
-        sudo add-apt-repository ppa:chris-lea/zeromq
         sudo apt-get update
-        sudo apt-get install libzmq3-dbg libzmq3-dev libzmq3
+        sudo apt-get install libzmq3-dev
     - name: setup
       run: |
         export CC=gcc-8
